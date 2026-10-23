@@ -555,19 +555,20 @@ def choose_calories(message):
     finish_poll(message.chat.id)
 
 
-# Завершение опроса: ищем рецепты в базе и показываем пользователю
 def finish_poll(chat_id):
     answers = user_answers[chat_id]
 
     found = find_recipes(answers)
 
     if not found:
-        bot.send_message(
+        msg = bot.send_message(
             chat_id,
             "К сожалению, по твоим условиям ничего не нашлось 😔\n"
-            "Попробуй изменить время, цену или калорийность.",
-            reply_markup=menu_keyboard
+            "Хочешь написать название своего блюда, которого здесь не хватает?",
+            reply_markup=create_end_keyboard()
         )
+        # Отдельный обработчик для ситуации, когда ничего не нашлось
+        bot.register_next_step_handler(msg, ask_when_not_found)
         return
 
     chosen = random.sample(found, min(MAX_RESULTS, len(found)))
@@ -577,12 +578,92 @@ def finish_poll(chat_id):
     for row in chosen:
         send_recipe(chat_id, row)
 
-    bot.send_message(
+    msg = bot.send_message(
         chat_id,
-        "Приятного приготовления! Хочешь что-нибудь ещё?",
-        reply_markup=menu_keyboard
+        "Ты нашел, что тебе нужно?",
+        reply_markup=create_end_keyboard()
     )
 
+    bot.register_next_step_handler(msg, ask_for_another_dish)
+
+def ask_when_not_found(message):
+    if message.text == "Да":  # Хочет предложить блюдо
+        msg = bot.send_message(
+            message.chat.id,
+            "Напиши название своего блюда:",
+            reply_markup=types.ReplyKeyboardRemove()
+        )
+        bot.register_next_step_handler(msg, receive_dish_name)
+
+    elif message.text == "Нет":  # Не хочет
+        bot.send_message(
+            message.chat.id,
+            "Хорошо, попробуй выбрать другие параметры.",
+            reply_markup=menu_keyboard
+        )
+
+    else:
+        msg = bot.send_message(
+            message.chat.id,
+            "Пожалуйста, выбери «Да» или «Нет» с помощью кнопок.",
+            reply_markup=create_end_keyboard()
+        )
+        bot.register_next_step_handler(msg, ask_when_not_found)
+
+def create_end_keyboard():
+    keyboard = types.ReplyKeyboardMarkup(
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    keyboard.add("Да")
+    keyboard.add("Нет")
+    return keyboard
+
+
+def ask_for_another_dish(message):
+    if message.text == "Нет":  # Не нашел нужное среди предложенных -> предложить свое
+        msg = bot.send_message(
+            message.chat.id,
+            "Напиши название своего блюда:",
+            reply_markup=types.ReplyKeyboardRemove()
+        )
+        bot.register_next_step_handler(msg, receive_dish_name)
+
+    elif message.text == "Да":  # Нашел подходящее
+        bot.send_message(
+            message.chat.id,
+            "Хорошо! Приятного приготовления! 😊",
+            reply_markup=menu_keyboard
+        )
+
+    else:
+        msg = bot.send_message(
+            message.chat.id,
+            "Пожалуйста, выбери «Да» или «Нет» с помощью кнопок.",
+            reply_markup=create_end_keyboard()
+        )
+        bot.register_next_step_handler(msg, ask_for_another_dish)
+
+def receive_dish_name(message):
+    dish_name = message.text.strip()
+
+    if not dish_name or dish_name.startswith("/"):
+        msg = bot.send_message(
+            message.chat.id,
+            "Пожалуйста, напиши название блюда."
+        )
+        bot.register_next_step_handler(
+            msg, receive_dish_name
+        )
+        return
+
+    bot.send_message(
+        message.chat.id,
+        f"Ты хочешь приготовить: «{dish_name}».\n\n"
+        "Название получено!\n"
+        "Мы обязательно добавим его позже 😊",
+        reply_markup=menu_keyboard  
+    )
 
 if __name__ == "__main__":
     bot.infinity_polling()
